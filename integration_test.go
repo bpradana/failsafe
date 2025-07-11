@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"failsafe/middleware"
-	"failsafe/strategies"
+	"github.com/bpradana/failsafe/middleware"
+	"github.com/bpradana/failsafe/strategies"
 )
 
 // Integration tests that combine multiple components
