@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -312,5 +313,309 @@ func TestConcurrentRetries(t *testing.T) {
 		if err := <-errChan; err != nil {
 			t.Errorf("Concurrent retry failed: %v", err)
 		}
+	}
+}
+
+// Async Mode Tests
+
+func TestRetrier_AsyncMode_ReturnsImmediately(t *testing.T) {
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 100 * time.Millisecond}),
+	)
+	ctx := context.Background()
+
+	start := time.Now()
+	err := retrier.Retry(ctx, func() error {
+		time.Sleep(200 * time.Millisecond) // Simulate work
+		return nil
+	})
+	duration := time.Since(start)
+
+	// Should return immediately (nil error in async mode)
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Should return much faster than the work duration
+	if duration > 50*time.Millisecond {
+		t.Errorf("Expected immediate return, took %v", duration)
+	}
+}
+
+func TestRetrier_AsyncMode_Success(t *testing.T) {
+	var successCalled bool
+	var successAttempt int
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			successCalled = true
+			successAttempt = attempt
+		}),
+	)
+	ctx := context.Background()
+
+	attempts := 0
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if !successCalled {
+		t.Error("Expected success hook to be called")
+	}
+	if successAttempt != 2 {
+		t.Errorf("Expected success on attempt 2, got %d", successAttempt)
+	}
+}
+
+func TestRetrier_AsyncMode_Failure(t *testing.T) {
+	var finalErrorCalled bool
+	var finalErrorAttempt int
+
+	retrier := NewRetrier(
+		WithMaxAttempts(2),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			finalErrorCalled = true
+			finalErrorAttempt = attempt
+		}),
+	)
+	ctx := context.Background()
+
+	err := retrier.Retry(ctx, func() error {
+		return errors.New("persistent failure")
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if !finalErrorCalled {
+		t.Error("Expected final error hook to be called")
+	}
+	if finalErrorAttempt != 2 {
+		t.Errorf("Expected final error on attempt 2, got %d", finalErrorAttempt)
+	}
+}
+
+func TestRetrier_AsyncMode_ContextCancellation(t *testing.T) {
+	var finalErrorCalled bool
+	var finalErrorMessage string
+
+	retrier := NewRetrier(
+		WithMaxAttempts(5),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 50 * time.Millisecond}),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			finalErrorCalled = true
+			finalErrorMessage = err.Error()
+		}),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	err := retrier.Retry(ctx, func() error {
+		return errors.New("will be cancelled")
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Cancel context after a short delay
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	// Wait for async operation to handle cancellation
+	time.Sleep(100 * time.Millisecond)
+
+	if !finalErrorCalled {
+		t.Error("Expected final error hook to be called on cancellation")
+	}
+	if !strings.Contains(finalErrorMessage, "cancelled") {
+		t.Errorf("Expected cancellation error message, got %s", finalErrorMessage)
+	}
+}
+
+func TestRetrier_AsyncMode_WithRetryHooks(t *testing.T) {
+	var retryCallCount int
+	var retryAttempts []int
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+			retryCallCount++
+			retryAttempts = append(retryAttempts, attempt)
+		}),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			// Final success
+		}),
+	)
+	ctx := context.Background()
+
+	attempts := 0
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if retryCallCount != 2 {
+		t.Errorf("Expected 2 retry hook calls, got %d", retryCallCount)
+	}
+
+	expectedAttempts := []int{1, 2}
+	if len(retryAttempts) != len(expectedAttempts) {
+		t.Errorf("Expected retry attempts %v, got %v", expectedAttempts, retryAttempts)
+	}
+	for i, expected := range expectedAttempts {
+		if i < len(retryAttempts) && retryAttempts[i] != expected {
+			t.Errorf("Expected retry attempt %d at index %d, got %d", expected, i, retryAttempts[i])
+		}
+	}
+}
+
+func TestRetrier_AsyncMode_NonRetryableError(t *testing.T) {
+	var finalErrorCalled bool
+	var attempts int
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithErrorFilter(func(err error) bool {
+			return !strings.Contains(err.Error(), "non-retryable")
+		}),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			finalErrorCalled = true
+		}),
+	)
+	ctx := context.Background()
+
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		return errors.New("non-retryable error")
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if !finalErrorCalled {
+		t.Error("Expected final error hook to be called for non-retryable error")
+	}
+	if attempts != 1 {
+		t.Errorf("Expected 1 attempt for non-retryable error, got %d", attempts)
+	}
+}
+
+func TestRetrier_SyncMode_Default(t *testing.T) {
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		// AsyncMode defaults to false
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+	)
+	ctx := context.Background()
+
+	attempts := 0
+	start := time.Now()
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+	duration := time.Since(start)
+
+	// Should block until completion
+	if err != nil {
+		t.Errorf("Expected no error in sync mode, got %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+
+	// Should take at least the delay time
+	if duration < 10*time.Millisecond {
+		t.Errorf("Expected sync mode to take at least 10ms, took %v", duration)
+	}
+}
+
+func TestRetrier_AsyncMode_MultipleOperations(t *testing.T) {
+	var successCount int
+	var mutex sync.Mutex
+
+	retrier := NewRetrier(
+		WithMaxAttempts(2),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			mutex.Lock()
+			successCount++
+			mutex.Unlock()
+		}),
+	)
+	ctx := context.Background()
+
+	// Start multiple async operations
+	const numOperations = 5
+	for i := 0; i < numOperations; i++ {
+		err := retrier.Retry(ctx, func() error {
+			time.Sleep(5 * time.Millisecond) // Simulate work
+			return nil
+		})
+		if err != nil {
+			t.Errorf("Expected nil error for operation %d, got %v", i, err)
+		}
+	}
+
+	// Wait for all operations to complete
+	time.Sleep(200 * time.Millisecond)
+
+	mutex.Lock()
+	finalCount := successCount
+	mutex.Unlock()
+
+	if finalCount != numOperations {
+		t.Errorf("Expected %d successful operations, got %d", numOperations, finalCount)
 	}
 }

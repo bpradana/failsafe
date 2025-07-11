@@ -296,3 +296,76 @@ func TestConfigurationImmutability(t *testing.T) {
 		t.Errorf("Expected original MaxAttempts 3, got %d", originalConfig.MaxAttempts)
 	}
 }
+
+func TestWithAsyncMode(t *testing.T) {
+	config := RetryConfig{}
+
+	// Test enabling async mode
+	option := WithAsyncMode(true)
+	option(&config)
+
+	if !config.AsyncMode {
+		t.Error("Expected AsyncMode to be true")
+	}
+
+	// Test disabling async mode
+	option = WithAsyncMode(false)
+	option(&config)
+
+	if config.AsyncMode {
+		t.Error("Expected AsyncMode to be false")
+	}
+}
+
+func TestAsyncModeIntegration(t *testing.T) {
+	// Test that async mode works with other configurations
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
+		WithErrorFilter(RetryTransientErrors),
+	)
+
+	config := retrier.GetConfig()
+
+	if config.MaxAttempts != 3 {
+		t.Errorf("Expected MaxAttempts 3, got %d", config.MaxAttempts)
+	}
+
+	if !config.AsyncMode {
+		t.Error("Expected AsyncMode to be true")
+	}
+
+	if config.DelayStrategy == nil {
+		t.Error("Expected DelayStrategy to be set")
+	}
+
+	if config.ErrorFilter == nil {
+		t.Error("Expected ErrorFilter to be set")
+	}
+}
+
+func TestAsyncModeWithConvenienceFunctions(t *testing.T) {
+	ctx := context.Background()
+
+	// Test that convenience functions work with async mode
+	// Note: These functions create their own retriers, so they don't use async mode
+	// This test ensures they still work correctly
+
+	attempts := 0
+	err := RetryWithExponentialBackoff(ctx, func() error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	}, 3)
+
+	if err != nil {
+		t.Errorf("Expected no error from convenience function, got %v", err)
+	}
+
+	if attempts != 2 {
+		t.Errorf("Expected 2 attempts, got %d", attempts)
+	}
+}

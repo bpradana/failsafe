@@ -500,3 +500,357 @@ func TestIntegration_CompleteFailsafeWorkflow(t *testing.T) {
 		t.Errorf("Expected 3 attempts, got %d", attempts)
 	}
 }
+
+// Async Mode Integration Tests
+
+func TestIntegration_AsyncModeWithMiddleware(t *testing.T) {
+	// Test async mode working with middleware
+	var metricsData struct {
+		totalAttempts int
+		successes     int
+		failures      int
+		mu            sync.Mutex
+	}
+
+	retrier := NewEnhancedRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(strategies.NewFixedDelay(10*time.Millisecond)),
+	)
+
+	metricsMiddleware := middleware.NewMetricsMiddleware(
+		func(attempt int) {
+			metricsData.mu.Lock()
+			metricsData.totalAttempts++
+			metricsData.mu.Unlock()
+		},
+		func(totalAttempts int) {
+			metricsData.mu.Lock()
+			metricsData.successes++
+			metricsData.mu.Unlock()
+		},
+		func(totalAttempts int, err error) {
+			metricsData.mu.Lock()
+			metricsData.failures++
+			metricsData.mu.Unlock()
+		},
+	)
+
+	retrier.AddMiddleware(metricsMiddleware)
+
+	ctx := context.Background()
+
+	// Start async operation
+	attempts := 0
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify metrics were collected
+	metricsData.mu.Lock()
+	totalAttempts := metricsData.totalAttempts
+	successes := metricsData.successes
+	failures := metricsData.failures
+	metricsData.mu.Unlock()
+
+	if totalAttempts != 2 {
+		t.Errorf("Expected 2 total attempts, got %d", totalAttempts)
+	}
+	if successes != 1 {
+		t.Errorf("Expected 1 success, got %d", successes)
+	}
+	if failures != 0 {
+		t.Errorf("Expected 0 failures, got %d", failures)
+	}
+}
+
+func TestIntegration_AsyncModeWithGenericResult(t *testing.T) {
+	// Test async mode with generic result handling
+	type AsyncResult struct {
+		ID    string
+		Data  map[string]interface{}
+		Count int
+	}
+
+	var result AsyncResult
+	var resultErr error
+	var resultReady bool
+	var mu sync.Mutex
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(strategies.NewFixedDelay(10*time.Millisecond)),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			mu.Lock()
+			defer mu.Unlock()
+			resultReady = true
+		}),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			mu.Lock()
+			defer mu.Unlock()
+			resultErr = err
+			resultReady = true
+		}),
+	)
+
+	ctx := context.Background()
+
+	// Start async operation
+	attempts := 0
+	err := retrier.Retry(ctx, func() error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("temporary failure")
+		}
+
+		// Simulate successful result
+		result = AsyncResult{
+			ID:    "async-result-123",
+			Data:  map[string]interface{}{"status": "completed"},
+			Count: 42,
+		}
+		return nil
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Wait for async operation to complete
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	ready := resultReady
+	finalErr := resultErr
+	mu.Unlock()
+
+	if !ready {
+		t.Error("Expected async operation to complete")
+	}
+	if finalErr != nil {
+		t.Errorf("Expected no error in async operation, got %v", finalErr)
+	}
+	if result.ID != "async-result-123" {
+		t.Errorf("Expected ID 'async-result-123', got %s", result.ID)
+	}
+	if result.Count != 42 {
+		t.Errorf("Expected count 42, got %d", result.Count)
+	}
+}
+
+func TestIntegration_AsyncModeBackgroundTaskProcessing(t *testing.T) {
+	// Test async mode for background task processing scenario
+	taskResults := make(map[string]string)
+	var tasksMu sync.Mutex
+	var completedTasks int
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(strategies.NewFixedDelay(5*time.Millisecond)),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			tasksMu.Lock()
+			completedTasks++
+			tasksMu.Unlock()
+		}),
+	)
+
+	ctx := context.Background()
+
+	// Simulate multiple background tasks
+	tasks := []string{"task1", "task2", "task3", "task4", "task5"}
+
+	// Create a shared attempts counter
+	attemptCounters := make(map[string]int)
+	var counterMu sync.Mutex
+
+	for _, taskID := range tasks {
+		// Capture taskID for closure
+		id := taskID
+
+		err := retrier.Retry(ctx, func() error {
+			// Simulate task processing
+			counterMu.Lock()
+			attemptCounters[id]++
+			currentAttempts := attemptCounters[id]
+			counterMu.Unlock()
+
+			if currentAttempts < 2 && (id == "task2" || id == "task4") {
+				return errors.New("temporary task failure")
+			}
+
+			// Simulate successful task completion
+			tasksMu.Lock()
+			taskResults[id] = "completed"
+			tasksMu.Unlock()
+			return nil
+		})
+
+		// Should return nil immediately for each task
+		if err != nil {
+			t.Errorf("Expected nil error for task %s, got %v", id, err)
+		}
+	}
+
+	// Wait for all background tasks to complete
+	time.Sleep(500 * time.Millisecond)
+
+	tasksMu.Lock()
+	finalResults := make(map[string]string)
+	for k, v := range taskResults {
+		finalResults[k] = v
+	}
+	finalCompletedTasks := completedTasks
+	tasksMu.Unlock()
+
+	// Verify all tasks completed
+	if len(finalResults) != len(tasks) {
+		t.Errorf("Expected %d completed tasks, got %d", len(tasks), len(finalResults))
+	}
+
+	for _, taskID := range tasks {
+		if status, exists := finalResults[taskID]; !exists || status != "completed" {
+			t.Errorf("Expected task %s to be completed, got status: %s, exists: %t", taskID, status, exists)
+		}
+	}
+
+	if finalCompletedTasks != len(tasks) {
+		t.Errorf("Expected %d completed tasks from success hooks, got %d", len(tasks), finalCompletedTasks)
+	}
+}
+
+func TestIntegration_AsyncModeWithContextCancellation(t *testing.T) {
+	// Test async mode with context cancellation
+	var cancelled bool
+	var cancelledMu sync.Mutex
+
+	retrier := NewRetrier(
+		WithMaxAttempts(10),
+		WithAsyncMode(true),
+		WithDelayStrategy(strategies.NewFixedDelay(50*time.Millisecond)),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			cancelledMu.Lock()
+			if errors.Is(err, context.Canceled) {
+				cancelled = true
+			}
+			cancelledMu.Unlock()
+		}),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start async operation
+	err := retrier.Retry(ctx, func() error {
+		return errors.New("will be cancelled")
+	})
+
+	// Should return nil immediately
+	if err != nil {
+		t.Errorf("Expected nil error in async mode, got %v", err)
+	}
+
+	// Cancel after a short delay
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	// Wait for cancellation to be processed
+	time.Sleep(100 * time.Millisecond)
+
+	cancelledMu.Lock()
+	wasCancelled := cancelled
+	cancelledMu.Unlock()
+
+	if !wasCancelled {
+		t.Error("Expected async operation to be cancelled")
+	}
+}
+
+func TestIntegration_AsyncModeConcurrentOperations(t *testing.T) {
+	// Test multiple concurrent async operations
+	var successCount int
+	var failureCount int
+	var mu sync.Mutex
+
+	retrier := NewRetrier(
+		WithMaxAttempts(3),
+		WithAsyncMode(true),
+		WithDelayStrategy(strategies.NewFixedDelay(5*time.Millisecond)),
+		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+			mu.Lock()
+			successCount++
+			mu.Unlock()
+		}),
+		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+			mu.Lock()
+			failureCount++
+			mu.Unlock()
+		}),
+	)
+
+	ctx := context.Background()
+
+	// Start multiple async operations
+	const numOperations = 20
+	operationAttempts := make(map[int]int)
+	var attemptsMu sync.Mutex
+
+	for i := 0; i < numOperations; i++ {
+		operationID := i
+		err := retrier.Retry(ctx, func() error {
+			attemptsMu.Lock()
+			operationAttempts[operationID]++
+			currentAttempts := operationAttempts[operationID]
+			attemptsMu.Unlock()
+
+			// Some operations succeed immediately, others need retries
+			if operationID%3 == 0 {
+				return nil // Success
+			}
+			if operationID%5 == 0 {
+				return errors.New("permanent failure") // Will exhaust retries
+			}
+			// Transient failure that will succeed on retry
+			if currentAttempts >= 2 {
+				return nil // Success after retry
+			}
+			return errors.New("temporary failure")
+		})
+
+		if err != nil {
+			t.Errorf("Expected nil error for async operation %d, got %v", i, err)
+		}
+	}
+
+	// Wait for all operations to complete
+	time.Sleep(300 * time.Millisecond)
+
+	mu.Lock()
+	finalSuccessCount := successCount
+	finalFailureCount := failureCount
+	mu.Unlock()
+
+	// Verify results
+	totalCompleted := finalSuccessCount + finalFailureCount
+	if totalCompleted != numOperations {
+		t.Errorf("Expected %d total completed operations, got %d", numOperations, totalCompleted)
+	}
+
+	// Most operations should succeed
+	if finalSuccessCount < numOperations/2 {
+		t.Errorf("Expected at least %d successes, got %d", numOperations/2, finalSuccessCount)
+	}
+}

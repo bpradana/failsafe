@@ -15,6 +15,7 @@ A robust, production-ready Go library for handling retries, circuit breakers, an
 - **Thread-Safe**: Concurrent-safe operations with proper synchronization
 - **Error Filtering**: Configurable error filters for selective retry logic
 - **Hook System**: Comprehensive callback system for retry events
+- **Async Mode**: Non-blocking retry operations with background execution
 
 ## Installation
 
@@ -78,6 +79,7 @@ result, err := failsafe.RetryWithResult(ctx, retrier, func() (string, error) {
 - `WithOnRetry(hook Hook)`: Execute callback on each retry attempt
 - `WithOnFinalError(hook Hook)`: Execute callback when all retries are exhausted
 - `WithOnSuccess(hook Hook)`: Execute callback on successful completion
+- `WithAsyncMode(async bool)`: Enable/disable asynchronous retry execution
 
 ### Error Filters
 
@@ -177,6 +179,67 @@ metricsMiddleware := middleware.NewMetricsMiddleware(
 )
 
 retrier.AddMiddleware(metricsMiddleware)
+```
+
+### Asynchronous Retry Operations
+
+```go
+// Create retrier with async mode enabled
+retrier := failsafe.NewRetrier(
+    failsafe.WithMaxAttempts(3),
+    failsafe.WithAsyncMode(true),
+    failsafe.WithDelayStrategy(strategies.ExponentialBackoffWithJitter(
+        100*time.Millisecond,
+        5*time.Second,
+        2.0,
+    )),
+    failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+        log.Printf("Async operation succeeded on attempt %d", attempt)
+    }),
+    failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+        log.Printf("Async operation failed after %d attempts: %v", attempt, err)
+    }),
+)
+
+// This returns immediately, operation runs in background
+err := retrier.Retry(ctx, func() error {
+    // Your potentially long-running operation
+    return performDatabaseOperation()
+})
+
+// err will be nil if async mode is enabled
+// Use hooks to monitor the actual operation results
+```
+
+### Sync vs Async Mode
+
+```go
+// Synchronous mode (default)
+syncRetrier := failsafe.NewRetrier(
+    failsafe.WithMaxAttempts(3),
+    failsafe.WithAsyncMode(false), // explicit, but this is the default
+)
+
+// Blocks until completion or failure
+err := syncRetrier.Retry(ctx, operation)
+if err != nil {
+    // Handle error immediately
+}
+
+// Asynchronous mode
+asyncRetrier := failsafe.NewRetrier(
+    failsafe.WithMaxAttempts(3),
+    failsafe.WithAsyncMode(true),
+    failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+        // Handle successful completion
+    }),
+    failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+        // Handle final failure
+    }),
+)
+
+// Returns immediately, operation runs in background
+asyncRetrier.Retry(ctx, operation) // Always returns nil in async mode
 ```
 
 ## Middleware
@@ -364,6 +427,7 @@ func (m *MockCircuitBreaker) State() string { return m.state }
 3. **Monitor Metrics**: Use metrics middleware to track retry behavior in production
 4. **Appropriate Jitter**: Use jitter to prevent thundering herd problems
 5. **Error Classification**: Implement proper error filters to avoid retrying permanent failures
+6. **Async Mode Usage**: Use async mode for fire-and-forget operations with proper hooks for monitoring
 
 ## Examples
 
@@ -430,6 +494,42 @@ func databaseOperationWithCircuitBreaker() error {
         // Database operation
         return db.QueryRow("SELECT * FROM users").Scan(&user)
     })
+}
+```
+
+### Async Background Processing
+
+```go
+func asyncBackgroundProcessing() {
+    // Create async retrier for background tasks
+    asyncRetrier := failsafe.NewRetrier(
+        failsafe.WithMaxAttempts(5),
+        failsafe.WithAsyncMode(true),
+        failsafe.WithDelayStrategy(strategies.ExponentialBackoffWithJitter(
+            500*time.Millisecond,
+            30*time.Second,
+            1.5,
+        )),
+        failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+            log.Printf("Background task completed successfully after %d attempts", attempt)
+            // Update task status in database
+            updateTaskStatus(taskID, "completed")
+        }),
+        failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+            log.Printf("Background task failed permanently after %d attempts: %v", attempt, err)
+            // Mark task as failed and notify administrators
+            updateTaskStatus(taskID, "failed")
+            sendAlertToAdmins(fmt.Sprintf("Task %s failed: %v", taskID, err))
+        }),
+    )
+    
+    // Start background processing - returns immediately
+    asyncRetrier.Retry(ctx, func() error {
+        return processLargeDataset()
+    })
+    
+    // Continue with other work while background task runs
+    log.Println("Background task started, continuing with other work...")
 }
 ```
 

@@ -45,6 +45,12 @@ func WithOnSuccess(hook Hook) RetryOption {
 	}
 }
 
+func WithAsyncMode(async bool) RetryOption {
+	return func(c *RetryConfig) {
+		c.AsyncMode = async
+	}
+}
+
 // Common error filters
 var (
 	RetryAllErrors = func(err error) bool { return true }
