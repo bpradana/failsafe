@@ -29,13 +29,13 @@ func main() {
 		failsafe.WithMaxAttempts(5),
 		failsafe.WithDelayStrategy(backoff),
 		failsafe.WithErrorFilter(failsafe.RetryTransientErrors),
-		failsafe.WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Retry attempt %d failed: %v, next delay: %v\n", attempt, err, nextDelay)
 		}),
-		failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Final retry attempt %d failed: %v\n", attempt, err)
 		}),
-		failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Success on attempt %d\n", attempt)
 		}),
 	)
@@ -91,13 +91,13 @@ func main() {
 			1.5,
 		)),
 		failsafe.WithErrorFilter(failsafe.RetryTransientErrors),
-		failsafe.WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async retry attempt %d failed: %v, next delay: %v\n", attempt, err, nextDelay)
 		}),
-		failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async operation succeeded on attempt %d\n", attempt)
 		}),
-		failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async operation failed permanently after %d attempts: %v\n", attempt, err)
 		}),
 	)

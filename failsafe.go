@@ -21,7 +21,7 @@ type DelayStrategy interface {
 type ErrorFilter func(error) bool
 
 // Hook represents a callback function for retry events
-type Hook func(attempt int, err error, nextDelay time.Duration)
+type Hook func(ctx context.Context, attempt int, err error, nextDelay time.Duration)
 
 // Middleware interface for extensible patterns
 type Middleware interface {

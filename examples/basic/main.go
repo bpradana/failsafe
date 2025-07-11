@@ -68,13 +68,13 @@ func main() {
 		failsafe.WithMaxAttempts(3),
 		failsafe.WithAsyncMode(true),
 		failsafe.WithDelayStrategy(&failsafe.FixedDelay{Delay: 500 * time.Millisecond}),
-		failsafe.WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async retry attempt %d failed: %v, next delay: %v\n", attempt, err, nextDelay)
 		}),
-		failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async operation succeeded on attempt %d\n", attempt)
 		}),
-		failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			fmt.Printf("Async operation failed after %d attempts: %v\n", attempt, err)
 		}),
 	)

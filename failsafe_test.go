@@ -143,13 +143,13 @@ func TestRetrier_Hooks(t *testing.T) {
 
 	retrier := NewRetrier(
 		WithMaxAttempts(3),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			onRetryCallCount++
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			onSuccessCallCount++
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			onFinalErrorCallCount++
 		}),
 	)
@@ -352,7 +352,7 @@ func TestRetrier_AsyncMode_Success(t *testing.T) {
 		WithMaxAttempts(3),
 		WithAsyncMode(true),
 		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			successCalled = true
 			successAttempt = attempt
 		}),
@@ -392,7 +392,7 @@ func TestRetrier_AsyncMode_Failure(t *testing.T) {
 		WithMaxAttempts(2),
 		WithAsyncMode(true),
 		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			finalErrorCalled = true
 			finalErrorAttempt = attempt
 		}),
@@ -427,7 +427,7 @@ func TestRetrier_AsyncMode_ContextCancellation(t *testing.T) {
 		WithMaxAttempts(5),
 		WithAsyncMode(true),
 		WithDelayStrategy(&FixedDelay{Delay: 50 * time.Millisecond}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			finalErrorCalled = true
 			finalErrorMessage = err.Error()
 		}),
@@ -467,11 +467,11 @@ func TestRetrier_AsyncMode_WithRetryHooks(t *testing.T) {
 		WithMaxAttempts(3),
 		WithAsyncMode(true),
 		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			retryCallCount++
 			retryAttempts = append(retryAttempts, attempt)
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Final success
 		}),
 	)
@@ -520,7 +520,7 @@ func TestRetrier_AsyncMode_NonRetryableError(t *testing.T) {
 		WithErrorFilter(func(err error) bool {
 			return !strings.Contains(err.Error(), "non-retryable")
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			finalErrorCalled = true
 		}),
 	)
@@ -588,7 +588,7 @@ func TestRetrier_AsyncMode_MultipleOperations(t *testing.T) {
 		WithMaxAttempts(2),
 		WithAsyncMode(true),
 		WithDelayStrategy(&FixedDelay{Delay: 10 * time.Millisecond}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			mutex.Lock()
 			successCount++
 			mutex.Unlock()

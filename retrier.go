@@ -91,7 +91,7 @@ func (r *Retrier) retrySync(ctx context.Context, fn RetryFunc) error {
 		err := fn()
 		if err == nil {
 			if config.OnSuccess != nil {
-				config.OnSuccess(attempt, nil, 0)
+				config.OnSuccess(ctx, attempt, nil, 0)
 			}
 			return nil
 		}
@@ -100,14 +100,14 @@ func (r *Retrier) retrySync(ctx context.Context, fn RetryFunc) error {
 
 		if !config.ErrorFilter(err) {
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, err, 0)
+				config.OnFinalError(ctx, attempt, err, 0)
 			}
 			return fmt.Errorf("non-retryable error: %w", err)
 		}
 
 		if attempt == config.MaxAttempts {
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, err, 0)
+				config.OnFinalError(ctx, attempt, err, 0)
 			}
 			return fmt.Errorf("max attempts reached: %w", err)
 		}
@@ -116,7 +116,7 @@ func (r *Retrier) retrySync(ctx context.Context, fn RetryFunc) error {
 		lastDelay = delay
 
 		if config.OnRetry != nil {
-			config.OnRetry(attempt, err, delay)
+			config.OnRetry(ctx, attempt, err, delay)
 		}
 
 		select {
@@ -143,7 +143,7 @@ func (r *Retrier) retryAsync(ctx context.Context, fn RetryFunc) {
 		select {
 		case <-ctx.Done():
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, fmt.Errorf("retry cancelled: %w", ctx.Err()), 0)
+				config.OnFinalError(ctx, attempt, fmt.Errorf("retry cancelled: %w", ctx.Err()), 0)
 			}
 			return
 		default:
@@ -152,21 +152,21 @@ func (r *Retrier) retryAsync(ctx context.Context, fn RetryFunc) {
 		err := fn()
 		if err == nil {
 			if config.OnSuccess != nil {
-				config.OnSuccess(attempt, nil, 0)
+				config.OnSuccess(ctx, attempt, nil, 0)
 			}
 			return
 		}
 
 		if !config.ErrorFilter(err) {
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, err, 0)
+				config.OnFinalError(ctx, attempt, err, 0)
 			}
 			return
 		}
 
 		if attempt == config.MaxAttempts {
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, err, 0)
+				config.OnFinalError(ctx, attempt, err, 0)
 			}
 			return
 		}
@@ -175,13 +175,13 @@ func (r *Retrier) retryAsync(ctx context.Context, fn RetryFunc) {
 		lastDelay = delay
 
 		if config.OnRetry != nil {
-			config.OnRetry(attempt, err, delay)
+			config.OnRetry(ctx, attempt, err, delay)
 		}
 
 		select {
 		case <-ctx.Done():
 			if config.OnFinalError != nil {
-				config.OnFinalError(attempt, fmt.Errorf("retry cancelled: %w", ctx.Err()), 0)
+				config.OnFinalError(ctx, attempt, fmt.Errorf("retry cancelled: %w", ctx.Err()), 0)
 			}
 			return
 		case <-time.After(delay):
@@ -215,7 +215,7 @@ func (e *EnhancedRetrier) executeWithMiddlewareAsync(ctx context.Context, fn Ret
 			case <-ctx.Done():
 				finalErr = fmt.Errorf("retry cancelled: %w", ctx.Err())
 				if config.OnFinalError != nil {
-					config.OnFinalError(attempt, finalErr, 0)
+					config.OnFinalError(ctx, attempt, finalErr, 0)
 				}
 				break
 			default:
@@ -224,7 +224,7 @@ func (e *EnhancedRetrier) executeWithMiddlewareAsync(ctx context.Context, fn Ret
 			err := fn()
 			if err == nil {
 				if config.OnSuccess != nil {
-					config.OnSuccess(attempt, nil, 0)
+					config.OnSuccess(ctx, attempt, nil, 0)
 				}
 				// Call middleware success callbacks
 				e.callMiddlewareSuccess(totalAttempts)
@@ -234,7 +234,7 @@ func (e *EnhancedRetrier) executeWithMiddlewareAsync(ctx context.Context, fn Ret
 			if !config.ErrorFilter(err) {
 				finalErr = err
 				if config.OnFinalError != nil {
-					config.OnFinalError(attempt, err, 0)
+					config.OnFinalError(ctx, attempt, err, 0)
 				}
 				break
 			}
@@ -242,7 +242,7 @@ func (e *EnhancedRetrier) executeWithMiddlewareAsync(ctx context.Context, fn Ret
 			if attempt == config.MaxAttempts {
 				finalErr = err
 				if config.OnFinalError != nil {
-					config.OnFinalError(attempt, err, 0)
+					config.OnFinalError(ctx, attempt, err, 0)
 				}
 				break
 			}
@@ -251,14 +251,14 @@ func (e *EnhancedRetrier) executeWithMiddlewareAsync(ctx context.Context, fn Ret
 			lastDelay = delay
 
 			if config.OnRetry != nil {
-				config.OnRetry(attempt, err, delay)
+				config.OnRetry(ctx, attempt, err, delay)
 			}
 
 			select {
 			case <-ctx.Done():
 				finalErr = fmt.Errorf("retry cancelled: %w", ctx.Err())
 				if config.OnFinalError != nil {
-					config.OnFinalError(attempt, finalErr, 0)
+					config.OnFinalError(ctx, attempt, finalErr, 0)
 				}
 				break
 			case <-time.After(delay):

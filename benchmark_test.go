@@ -68,10 +68,10 @@ func BenchmarkRetrier_WithFixedDelay(b *testing.B) {
 func BenchmarkRetrier_WithHooks(b *testing.B) {
 	retrier := NewRetrier(
 		WithMaxAttempts(2),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Simulate some work in the hook
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Simulate some work in the hook
 		}),
 	)

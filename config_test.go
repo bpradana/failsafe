@@ -45,9 +45,10 @@ func TestWithErrorFilter(t *testing.T) {
 }
 
 func TestWithOnRetry(t *testing.T) {
+	ctx := context.Background()
 	config := RetryConfig{}
 	called := false
-	hook := func(attempt int, err error, nextDelay time.Duration) {
+	hook := func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 		called = true
 	}
 	option := WithOnRetry(hook)
@@ -58,16 +59,17 @@ func TestWithOnRetry(t *testing.T) {
 	}
 
 	// Test the hook function
-	config.OnRetry(1, errors.New("test"), time.Second)
+	config.OnRetry(ctx, 1, errors.New("test"), time.Second)
 	if !called {
 		t.Error("OnRetry hook not called")
 	}
 }
 
 func TestWithOnFinalError(t *testing.T) {
+	ctx := context.Background()
 	config := RetryConfig{}
 	called := false
-	hook := func(attempt int, err error, nextDelay time.Duration) {
+	hook := func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 		called = true
 	}
 	option := WithOnFinalError(hook)
@@ -78,16 +80,17 @@ func TestWithOnFinalError(t *testing.T) {
 	}
 
 	// Test the hook function
-	config.OnFinalError(3, errors.New("test"), 0)
+	config.OnFinalError(ctx, 3, errors.New("test"), 0)
 	if !called {
 		t.Error("OnFinalError hook not called")
 	}
 }
 
 func TestWithOnSuccess(t *testing.T) {
+	ctx := context.Background()
 	config := RetryConfig{}
 	called := false
-	hook := func(attempt int, err error, nextDelay time.Duration) {
+	hook := func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 		called = true
 	}
 	option := WithOnSuccess(hook)
@@ -98,7 +101,7 @@ func TestWithOnSuccess(t *testing.T) {
 	}
 
 	// Test the hook function
-	config.OnSuccess(2, nil, 0)
+	config.OnSuccess(ctx, 2, nil, 0)
 	if !called {
 		t.Error("OnSuccess hook not called")
 	}

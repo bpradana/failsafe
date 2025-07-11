@@ -79,13 +79,13 @@ func RetryWithLogging(ctx context.Context, fn RetryFunc, maxAttempts int, logger
 	retrier := NewRetrier(
 		WithMaxAttempts(maxAttempts),
 		WithDelayStrategy(strategies.ExponentialBackoffWithJitter(100*time.Millisecond, 5*time.Second, 2.0)),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			logger("Retry attempt %d failed: %v, next delay: %v", attempt, err, nextDelay)
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			logger("Final retry attempt %d failed: %v", attempt, err)
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			logger("Success on attempt %d", attempt)
 		}),
 	)

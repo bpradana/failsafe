@@ -144,13 +144,13 @@ retrier := failsafe.NewRetrier(
         2.0,
     )),
     failsafe.WithErrorFilter(failsafe.RetryTransientErrors),
-    failsafe.WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         log.Printf("Retry attempt %d failed: %v, next delay: %v", attempt, err, nextDelay)
     }),
-    failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         log.Printf("Final retry attempt %d failed: %v", attempt, err)
     }),
-    failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         log.Printf("Success on attempt %d", attempt)
     }),
 )
@@ -193,10 +193,10 @@ retrier := failsafe.NewRetrier(
         5*time.Second,
         2.0,
     )),
-    failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         log.Printf("Async operation succeeded on attempt %d", attempt)
     }),
-    failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         log.Printf("Async operation failed after %d attempts: %v", attempt, err)
     }),
 )
@@ -230,10 +230,10 @@ if err != nil {
 asyncRetrier := failsafe.NewRetrier(
     failsafe.WithMaxAttempts(3),
     failsafe.WithAsyncMode(true),
-    failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         // Handle successful completion
     }),
-    failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+    failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
         // Handle final failure
     }),
 )
@@ -510,12 +510,12 @@ func asyncBackgroundProcessing() {
             30*time.Second,
             1.5,
         )),
-        failsafe.WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+        failsafe.WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
             log.Printf("Background task completed successfully after %d attempts", attempt)
             // Update task status in database
             updateTaskStatus(taskID, "completed")
         }),
-        failsafe.WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+        failsafe.WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
             log.Printf("Background task failed permanently after %d attempts: %v", attempt, err)
             // Mark task as failed and notify administrators
             updateTaskStatus(taskID, "failed")
@@ -577,7 +577,7 @@ type DelayStrategy interface {
 type ErrorFilter func(error) bool
 
 // Hook represents a callback function for retry events
-type Hook func(attempt int, err error, nextDelay time.Duration)
+type Hook func(ctx context.Context, attempt int, err error, nextDelay time.Duration)
 
 // Middleware interface for extensible patterns
 type Middleware interface {

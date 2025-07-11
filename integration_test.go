@@ -18,13 +18,13 @@ func TestIntegration_CompleteRetryWorkflow(t *testing.T) {
 		WithMaxAttempts(5),
 		WithDelayStrategy(strategies.NewExponentialBackoff(10*time.Millisecond, 100*time.Millisecond, 2.0)),
 		WithErrorFilter(RetryTransientErrors),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Log retry attempt
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Log success
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// Log final failure
 		}),
 	)
@@ -400,13 +400,13 @@ func TestIntegration_CompleteFailsafeWorkflow(t *testing.T) {
 			2.0,
 		)),
 		WithErrorFilter(RetryTransientErrors),
-		WithOnRetry(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnRetry(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// In a real scenario, this would log the retry attempt
 		}),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// In a real scenario, this would log the success
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			// In a real scenario, this would log the final failure
 		}),
 	)
@@ -593,12 +593,12 @@ func TestIntegration_AsyncModeWithGenericResult(t *testing.T) {
 		WithMaxAttempts(3),
 		WithAsyncMode(true),
 		WithDelayStrategy(strategies.NewFixedDelay(10*time.Millisecond)),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			mu.Lock()
 			defer mu.Unlock()
 			resultReady = true
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			mu.Lock()
 			defer mu.Unlock()
 			resultErr = err
@@ -662,7 +662,7 @@ func TestIntegration_AsyncModeBackgroundTaskProcessing(t *testing.T) {
 		WithMaxAttempts(3),
 		WithAsyncMode(true),
 		WithDelayStrategy(strategies.NewFixedDelay(5*time.Millisecond)),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			tasksMu.Lock()
 			completedTasks++
 			tasksMu.Unlock()
@@ -742,7 +742,7 @@ func TestIntegration_AsyncModeWithContextCancellation(t *testing.T) {
 		WithMaxAttempts(10),
 		WithAsyncMode(true),
 		WithDelayStrategy(strategies.NewFixedDelay(50*time.Millisecond)),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			cancelledMu.Lock()
 			if errors.Is(err, context.Canceled) {
 				cancelled = true
@@ -789,12 +789,12 @@ func TestIntegration_AsyncModeConcurrentOperations(t *testing.T) {
 		WithMaxAttempts(3),
 		WithAsyncMode(true),
 		WithDelayStrategy(strategies.NewFixedDelay(5*time.Millisecond)),
-		WithOnSuccess(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnSuccess(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			mu.Lock()
 			successCount++
 			mu.Unlock()
 		}),
-		WithOnFinalError(func(attempt int, err error, nextDelay time.Duration) {
+		WithOnFinalError(func(ctx context.Context, attempt int, err error, nextDelay time.Duration) {
 			mu.Lock()
 			failureCount++
 			mu.Unlock()
